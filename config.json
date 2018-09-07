@@ -1,0 +1,6 @@
+{
+    "rabbit_username": "test",
+    "rabbit_password": "test",
+    "rabbit_vip": "127.0.0.1",
+    "num_pc_pairs": "100"
+}
