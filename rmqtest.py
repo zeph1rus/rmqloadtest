@@ -3,15 +3,15 @@
 # Jon Truran
 ####################
 
-import sys,json,os,time,threading,Queue,logging
+import sys,json,os,time,threading,queue,logging
 import random
 import string
 import pika
 import math
 
 def generate_random_string():
-    digits = "".join( [random.choice(string.digits) for i in xrange(8)] )
-    chars = "".join( [random.choice(string.letters) for i in xrange(200)] )
+    digits = "".join( [random.choice(string.digits) for i in range(8)] )
+    chars = "".join( [random.choice(string.ascii_letters) for i in range(2000)] )
     return digits + chars + digits
 
 def get_rabbit_creds():
@@ -40,7 +40,7 @@ class rmq_producer(threading.Thread):
         self.qn = qname
         
     def run(self):
-        print ("Starting : "+ self.name)
+        print ("Starting : {0} - Queue : {1}".format(self.name, self.qn))
         try:
             mq_connection = pika.BlockingConnection(pika.ConnectionParameters(get_rabbit_hostname(), 5672, "/", get_rabbit_creds()))
             mq_channel = mq_connection.channel()
@@ -50,12 +50,14 @@ class rmq_producer(threading.Thread):
                     msg = self.q.get(True,10)
                     if isinstance(msg, str) and msg == 'quit':
                         break
-                except Queue.Empty:
+                except queue.Empty:
                     pass
                 mq_channel.basic_publish(exchange='',
                                          routing_key=self.qn,
                                          body=generate_random_string())
-                time.sleep(random.randint(0,30)*0.1)
+                time.sleep(random.randint(0,15)*0.1)
+            mq_channel.queue_purge(queue=self.qn)
+            mq_channel.queue_delete(queue=self.qn)
             mq_connection.close()
         except Exception as e:
             print("Exception Thread {0} {1}".format(self.name,str(e)))
@@ -84,7 +86,7 @@ class rmq_consumer(threading.Thread):
                     msg = self.q.get(True,10)
                     if isinstance(msg, str) and msg == 'quit':
                         break
-                except Queue.Empty:
+                except queue.Empty:
                     #this is normal - we're only using q for control messages
                     pass
                 try:
@@ -93,7 +95,7 @@ class rmq_consumer(threading.Thread):
                         mq_channel.basic_ack(meth.delivery_tag)
                 except Exception as e:
                     print("Exception Thread {0} {1}".format(self.name,str(e)))
-                time.sleep(random.randint(0,30)*0.1)
+                time.sleep(random.randint(0,20)*0.1)
             mq_connection.close()
         except Exception as e:
             print("Exception Thread {0} {1}".format(self.name,str(e)))
@@ -101,18 +103,19 @@ class rmq_consumer(threading.Thread):
 
 
 if __name__ == '__main__':
+    queueprefix = str(random.randint(100,999))
     producer_list = []
     consumer_list = []
-    producer_queue = Queue.Queue(0)
-    consumer_queue = Queue.Queue(0)
+    producer_queue = queue.Queue(0)
+    consumer_queue = queue.Queue(0)
     try:
         config_object = json.load(open("config.json","r"))
         print ("Current Config")
         print (json.dumps(config_object))
         num_pairs = config_object['num_pc_pairs']
         for tn in range(1, int(num_pairs) + 1):
-            new_producer = rmq_producer(tn,"Producer" + str(tn), producer_queue, "tstq" + str(tn))
-            new_consumer = rmq_consumer(tn,"Producer" + str(tn), consumer_queue, "tstq" + str(tn))
+            new_producer = rmq_producer(tn,"Producer" + str(tn), producer_queue, queueprefix + "tstq" + str(tn))
+            new_consumer = rmq_consumer(tn,"Consumer" + str(tn), consumer_queue, queueprefix + "tstq" + str(tn))
             new_producer.start()
             producer_list.append(new_producer)
             new_consumer.start()
